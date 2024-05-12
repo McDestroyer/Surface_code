@@ -233,10 +233,14 @@ class Controller:
         deadzone = .15
 
         return {
-            "left_x": squeeze(left_x, -1.0, 1.0, deadzone),
-            "left_y": squeeze(left_y, -1.0, 1.0, deadzone),
-            "right_x": squeeze(right_x, -1.0, 1.0, deadzone),
-            "right_y": squeeze(right_y, -1.0, 1.0, deadzone),
+            # "left_x": squeeze(left_x, -1.0, 1.0, deadzone),
+            # "left_y": squeeze(left_y, -1.0, 1.0, deadzone),
+            # "right_x": squeeze(right_x, -1.0, 1.0, deadzone),
+            # "right_y": squeeze(right_y, -1.0, 1.0, deadzone),
+            "left_x": self.cont.joystick.get_axis(0),
+            "left_y": self.cont.joystick.get_axis(1),
+            "right_x": self.cont.joystick.get_axis(2),
+            "right_y": self.cont.joystick.get_axis(3),
             "triggers": combine_triggers(self.cont.joystick.get_axis(4), self.cont.joystick.get_axis(5)),
             "a": self.cont.joystick.get_button(0),
             "b": self.cont.joystick.get_button(1),

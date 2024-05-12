@@ -6,11 +6,11 @@ thruster_mask = [
     1,
     -1,
     -1,
-    1,
-    1,
+    .75,
+    .75,
 ]
 
-power_multiplier = 1
+power_multiplier = .6
 
 class Thruster:
     """Basic wrapper for a servo-based thruster."""
@@ -109,10 +109,10 @@ def lateral_thruster_calc(x: float, y: float, r: float) -> FrameThrusters:
     rr /= normalization_factor
     rl /= normalization_factor
 
-    fr *= thruster_mask[0] * power_multiplier
-    fl *= thruster_mask[1] * power_multiplier
-    rr *= thruster_mask[2] * power_multiplier
-    rl *= thruster_mask[3] * power_multiplier
+    fr *= thruster_mask[0] * power_multiplier #* 1 if y <= 0 else .8
+    fl *= thruster_mask[1] * power_multiplier #* 1 if y >= 0 else .8
+    rr *= thruster_mask[2] * power_multiplier #* 1 if y <= 0 else .8
+    rl *= thruster_mask[3] * power_multiplier #* 1 if y >= 0 else .8
 
     return FrameThrusters(Thruster(fr), Thruster(fl), Thruster(rr), Thruster(rl))
 
@@ -135,10 +135,10 @@ def lateral_thruster_calc_circular(x: float, y: float, r: float):
     x, y = map_to_circle(x, y)
     r *= INV_SQRT2
     thrusters = lateral_thruster_calc(x, y, r)
-    mag_adjust = math.sqrt(x**2 + y**2) / max((thrusters.fr.power,
+    mag_adjust = abs(math.sqrt(x**2 + y**2) / max((thrusters.fr.power,
                                                thrusters.fl.power,
                                                thrusters.rr.power,
-                                               thrusters.rl.power))
+                                               thrusters.rl.power)))
 
     thrusters.fr.power *= mag_adjust
     thrusters.fl.power *= mag_adjust
@@ -168,8 +168,8 @@ def vertical_pwm_calc(z: float, pitch: float) -> tuple[int, int]:
     fv /= normalization_divisor
     rv /= normalization_divisor
 
-    fv *= thruster_mask[4] * power_multiplier
-    rv *= thruster_mask[5] * power_multiplier
+    fv *= thruster_mask[4]
+    rv *= thruster_mask[5] 
 
     # Finally, we need to convert these values to PWM values.
     fv = int(1500 + 400 * fv)

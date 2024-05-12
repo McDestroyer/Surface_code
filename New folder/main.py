@@ -67,7 +67,7 @@ class Main:
 
             # print("Left X:", left_x, "Left Y:", left_y, "Right X:", right_x,
             #       "Right Y:", right_y, "Triggers:", triggers)
-            print(data, "\n", self.pi.recv())
+            print(self.pi.recv(), "LX:", round(left_x, 5), "LY:", round(left_y, 5), "RX:", round(right_x, 5), "RY:", round(right_y, 5))
 
 if __name__ == "__main__":
     while True:
