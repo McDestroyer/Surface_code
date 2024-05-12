@@ -15,7 +15,9 @@ class Main:
     def __init__(self) -> None:
         self.joy = Controller(XBOX_CONFIG)
         self.ser = SerialManager()
-        self.pi = PiConnection()
+        # self.pi = PiConnection()
+        self.buttons = [False, False, False, False]
+        self.relay = False
 
     def main(self):
         """Main"""
@@ -34,8 +36,8 @@ class Main:
 
             thrust = lateral_thruster_calc(left_x, left_y, right_x)
 
-            data = thrust.get_pwm(triggers, right_y)
-            # data = {
+            message_data = thrust.get_pwm(triggers, right_y)
+            # message_data = {
             #     "fr": 1900,  # 5.0-5.1? Amps
             #     "fl": 1900,  # 5.0 Amps
             #     "rr": 1900,  # 5.3 Amps
@@ -43,17 +45,22 @@ class Main:
             #     "fv": 1500,  #  Amps
             #     "rv": 1500,  #  Amps
             # }
-            data["msg"] = []
-            data["restart"] = False
+            message_data["msg"] = []
+            message_data["restart"] = False
 
             if buttons[0]:
-                self.ser.send("1")
-                # print("a", end="")
-            else:
-                self.ser.send("0")
+                print("a")
+            if not self.buttons[0] and buttons[0]:
+                self.relay = not self.relay
+                self.ser.send("1" if self.relay else "0")
+                print(self.ser.recv())
+            self.buttons[0] = buttons[0]
+            # print("a", end="")
 
             if buttons[1]:
-                pass
+                print("b")
+                self.ser.send("0")
+                print(self.ser.recv())
                 # print("b", end="")
             if buttons[2]:
                 pass
@@ -63,11 +70,13 @@ class Main:
                 # print("y", end="")
             # print()
 
-            self.pi.send(json.dumps(data).encode())
+            # self.pi.send(json.dumps(message_data).encode())
 
             # print("Left X:", left_x, "Left Y:", left_y, "Right X:", right_x,
             #       "Right Y:", right_y, "Triggers:", triggers)
-            print(self.pi.recv(), "LX:", round(left_x, 5), "LY:", round(left_y, 5), "RX:", round(right_x, 5), "RY:", round(right_y, 5))
+            # print(self.pi.recv(), "LX:", round(left_x, 5), "LY:", round(left_y, 5),
+            #       "RX:", round(right_x, 5), "RY:", round(right_y, 5))
+
 
 if __name__ == "__main__":
     while True:

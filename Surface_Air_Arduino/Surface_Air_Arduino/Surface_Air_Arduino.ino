@@ -7,22 +7,28 @@ void setup() {
 
   
   pinMode(relayPin, OUTPUT);
-  
-  Serial.println("Begin.");
 }
 
 
 
 void loop() {
+  int relayState = 0;
   if (Serial.available()) {
     String data = Serial.readString();
-    int relayState = 0;
+    // Serial.read();
+
+    data.replace("\n", "");
 
     if (data == "1") {
       relayState = 1;
     }
+    else {
+      relayState = 0;
+    }
 
-    Serial.write("Set to ")
+    Serial.println("Received: [" + data + "]");
+
+    // Serial.println("Set to " + String(relayState));
 
     digitalWrite(relayPin, relayState);
   }
