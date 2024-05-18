@@ -120,9 +120,11 @@ class Main:
 
         # Thruster mask hot modification.
         mod_inc = .05
+        modded_thrusters = False
 
         # If left bumper is pressed, decrease thruster mask values.
         if controls["left_bumper"] and not self.instantaneous_controls["left_bumper"]:
+            modded_thrusters = True
             # Front motors: fr, fl, fv
             if controls["up"]:
                 if controls["right"]:
@@ -148,6 +150,7 @@ class Main:
 
         # If right bumper is pressed, increase thruster mask values.
         elif controls["right_bumper"] and not self.instantaneous_controls["right_bumper"]:
+            modded_thrusters = True
             # Front motors: fr, fl, fv
             if controls["up"]:
                 if controls["right"]:
@@ -173,6 +176,7 @@ class Main:
 
         # If back is pressed, reverse thruster polarity.
         elif controls["back"] and not self.instantaneous_controls["back"]:
+            modded_thrusters = True
             # Front motors: fr, fl, fv
             if controls["up"]:
                 if controls["right"]:
@@ -190,9 +194,13 @@ class Main:
                 else:
                     self.thrusters.rv.reverse_polarity()
 
+        # If start is pressed, save thruster/frame settings.
+        if controls["start"] and not self.instantaneous_controls["start"]:
+            modded_thrusters = True
+            self.thrusters.save_settings()
+
         # Print thruster mask to show changes.
-        if ((controls["left_bumper"] and not self.instantaneous_controls["left_bumper"]) or
-            (controls["right_bumper"] and not self.instantaneous_controls["right_bumper"])):
+        if modded_thrusters:
             print(
                 "FR:", self.thrusters.fr.get_multiplier(), "\n",
                 "FL:", self.thrusters.fl.get_multiplier(), "\n",
