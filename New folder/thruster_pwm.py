@@ -1,16 +1,24 @@
 """Module providing a basic wrapper for ROV thrusters and PWM calculations."""
 import math
 
-thruster_mask = [
-    -1,
-    1,
-    -1,
-    -1,
-    .75,
-    .75,
-]
+# thruster_mask = [
+#     -1,  # fr
+#     1,  # fl
+#     -1,  # rr
+#     -1,  # rl
+#     .75,  # fv
+#     .75,  # rv
+# ]
 
-power_multiplier = .6
+thruster_mask_dict = {
+    "fr": -1,  # fr
+    "fl": 1,  # fl
+    "rr": -1,  # rr
+    "rl": -1,  # rl
+    "fv": .75,  # fv
+    "rv": .75,  # rv
+    "power_multiplier": .6
+}
 
 class Thruster:
     """Basic wrapper for a servo-based thruster."""
@@ -109,10 +117,11 @@ def lateral_thruster_calc(x: float, y: float, r: float) -> FrameThrusters:
     rr /= normalization_factor
     rl /= normalization_factor
 
-    fr *= thruster_mask[0] * power_multiplier #* 1 if y <= 0 else .8
-    fl *= thruster_mask[1] * power_multiplier #* 1 if y >= 0 else .8
-    rr *= thruster_mask[2] * power_multiplier #* 1 if y <= 0 else .8
-    rl *= thruster_mask[3] * power_multiplier #* 1 if y >= 0 else .8
+    # * 1 if y <= 0 else .8
+    fr *= thruster_mask_dict["fr"] * thruster_mask_dict["power_multiplier"]
+    fl *= thruster_mask_dict["fl"] * thruster_mask_dict["power_multiplier"]
+    rr *= thruster_mask_dict["rr"] * thruster_mask_dict["power_multiplier"]
+    rl *= thruster_mask_dict["rl"] * thruster_mask_dict["power_multiplier"]
 
     return FrameThrusters(Thruster(fr), Thruster(fl), Thruster(rr), Thruster(rl))
 
@@ -168,8 +177,8 @@ def vertical_pwm_calc(z: float, pitch: float) -> tuple[int, int]:
     fv /= normalization_divisor
     rv /= normalization_divisor
 
-    fv *= thruster_mask[4]
-    rv *= thruster_mask[5] 
+    fv *= thruster_mask_dict["fv"]
+    rv *= thruster_mask_dict["rv"]
 
     # Finally, we need to convert these values to PWM values.
     fv = int(1500 + 400 * fv)

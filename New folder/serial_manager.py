@@ -7,8 +7,8 @@ class SerialManager:
 
         for port in range(30):
             try:
-                self.ser = serial.Serial('/dev/ttyACM'+str(port), 9600)
-                print("connected to:", '/dev/ttyACM'+str(port))
+                self.ser = serial.Serial('COM'+str(port), 9600)
+                print("connected to:", 'COM'+str(port))
                 return
             except serial.serialutil.SerialException:
                 continue

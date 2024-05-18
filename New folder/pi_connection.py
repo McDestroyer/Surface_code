@@ -31,10 +31,6 @@ class PiConnection:
                 print(e)
                 self.port_mod += 1
 
-                # self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                # self.s.settimeout(self.TIMEOUT)
-                # self.s.connect((self.TCP_IP, self.BACKUP_TCP_PORT))
-
     def send(self, message):
         """Send a message."""
         self.s.send(message)

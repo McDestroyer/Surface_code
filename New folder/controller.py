@@ -1,252 +1,118 @@
 """Provides an interface for a game controller."""
 
-import time
 import pygame
-from pygame.locals import *
-
-
-def map_ranges(x, from_range, to_range):
-    """Interpolates a value from one range to another.
-
-    Args:
-        x (float): the value to interpolate
-        from_range (tuple[int, int]): (min, max) for input range
-        to_range (tuple[int, int]): (min, max) for output range
-
-    Returns:
-        float: the interpolated value
-    """
-    delta_y = to_range[1] - to_range[0]
-    delta_x = from_range[1] - from_range[0]
-    slope = delta_y / delta_x
-    return slope * (x - from_range[0]) + to_range[0]
-
-
-def squeeze(x, _min, _max, deadband=0.1):
-    """Make sure a value is within a certain range and above a certain threshhold.
-
-    Args:
-        x (float): the value to squeeze
-        _min (float): the minimum value
-        _max (float): the maximum value
-        deadband (float): the deadband
-
-    Returns:
-        float: the squeezed value
-    """
-    x = min(max(x, _min), _max)
-    if abs(x) > deadband:
-        return x
-    return 0
-
-
-class RawController:
-    """An unfiltered interface for a pygame controller"""
-
-    def __init__(self):
-        pygame.init()
-
-        self.joystick = pygame.joystick.Joystick(0)
-
-    def update(self):
-        for event in pygame.event.get():
-            pass
-
-    def get_left(self):
-        return self.joystick.get_axis(0), self.joystick.get_axis(1)
-
-    def get_right(self):
-        return self.joystick.get_axis(2), self.joystick.get_axis(3)
-
-    def quit(self):
-        pygame.quit()
-
 
 class Controller:
     """An interface for a configurable pygame controller."""
 
-    def __init__(self, config=None):
-        self.cont = RawController()
+    def __init__(self):
+        pygame.init()
+        self.joystick = pygame.joystick.Joystick(0)
+        self.deadzone = 0.15
 
-        self.left_x_center = 0.0
-        self.left_y_center = 0.0
-
-        self.right_x_center = 0.0
-        self.right_y_center = 0.0
-
-        self.left_x_range = [-1.0, 1.0]
-        self.left_y_range = [-1.0, 1.0]
-
-        self.right_x_range = [-1.0, 1.0]
-        self.right_y_range = [-1.0, 1.0]
-
-        if config is not None:
-            self.load_config(config)
-
-    def dump_config(self):
-        """Dumps the configuration of the controller.
+    def get(self) -> dict:
+        """Get current state of the controller.
 
         Returns:
-            dict[str, float]: configuration relationships
-        """
+            dict: The current state of the controller.
+
+            Example:
+            {
+                "left_x": 0.0,
+                "left_y": 0.0,
+                "right_x": 0.0,
+                "right_y": 0.0,
+                "triggers": 0.0,
+                "a": 0,
+                "b": 0,
+                "x": 0,
+                "left_bumper": 0,
+                "right_bumper": 0,
+                "back": 0,
+                "start": 0,
+                "home": 0,
+                "left_joystick_click": 0,
+                "right_joystick_click": 0,
+                "hat": (0, 0),
+            }"""
+        self.update()
+
+        hat = self.joystick.get_hat(0)
+
         return {
-            "left_x_center": self.left_x_center,
-            "left_y_center": self.left_y_center,
-            "right_x_center": self.right_x_center,
-            "right_y_center": self.right_y_center,
-            "left_x_range": self.left_x_range,
-            "left_y_range": self.left_y_range,
-            "right_x_range": self.right_x_range,
-            "right_y_range": self.right_y_range,
+            "left_x": self.axis(0),
+            "left_y": self.axis(1),
+            "right_x": self.axis(2),
+            "right_y": self.axis(3),
+            "triggers": combine_triggers(self.axis(4), self.axis(5)),
+            "a": self.button(0),
+            "b": self.button(1),
+            "x": self.button(2),
+            "left_bumper": self.button(3),
+            "right_bumper": self.button(4),
+            "back": self.button(5),
+            "start": self.button(6),
+            "home": self.button(7),
+            "left_joystick_click": self.button(8),
+            "right_joystick_click": self.button(9),
+            "up": 1 if hat[1] == 1 else 0,
+            "down": 1 if hat[1] == -1 else 0,
+            "left": 1 if hat[0] == -1 else 0,
+            "right": 1 if hat[0] == 1 else 0,
         }
 
-    def load_config(self, config):
-        """Load configuration from a dictionary.
-
+    def axis(self, axis: int) -> float:
+        """Get the value of a specific axis.
+        
         Args:
-            config (dict[str, float]): config relationships
-        """
-        self.left_x_center = config["left_x_center"]
-        self.left_y_center = config["left_y_center"]
+            axis (int):
+                The axis to get the value of.
 
-        self.right_x_center = config["right_x_center"]
-        self.right_y_center = config["right_y_center"]
+        Returns:
+            float: The value of the axis."""
+        return apply_deadzone(self.joystick.get_axis(axis), self.deadzone)
 
-        self.left_x_range = config["left_x_range"]
-        self.left_y_range = config["left_y_range"]
+    def button(self, button: int) -> bool:
+        """Get the value of a specific button.
+        
+        Args:
+            button (int):
+                The button to get the value of.
 
-        self.right_x_range = config["right_x_range"]
-        self.right_y_range = config["right_y_range"]
+        Returns:
+            bool: The value of the button."""
+        return 1 if self.joystick.get_button(button) else 0
 
     def update(self):
-        """Tick controller readings."""
-        self.cont.update()
+        """Update the controller state by clearing the event queue."""
+        pygame.event.get()
+        # Not sure why you bothered looping through the events, but left it here just in case.
+        # for _ in pygame.event.get():
+        #     pass
 
-    def config(self):
-        """Run a configuration utility."""
-        print("Press forward on both sticks...")
-        while not (
-            self.cont.get_left()[0]
-            and self.cont.get_left()[1]
-            and self.cont.get_right()[0]
-            and self.cont.get_left()[1]
-        ):
-            self.update()
+    def quit(self):
+        """Quit the controller."""
+        pygame.quit()
 
-        time.sleep(2.0)
-        print("Release both sticks.")
-        time.sleep(1.0)
+    def __del__(self):
+        self.quit()
 
-        self.left_x_center = 0
-        self.left_y_center = 0
 
-        self.right_x_center = 0
-        self.right_y_center = 0
+def apply_deadzone(value: float, deadzone: float = 0.15) -> float:
+    """Apply a deadzone to the controller input.
+    
+    Args:
+        value (float):
+            The value to apply the deadzone to.
+        deadzone (float, optional):
+            The deadzone value.
+            Defaults to 0.15.
 
-        for _ in range(20):
-            self.update()
-            self.left_x_center += self.cont.get_left()[0]
-            self.left_y_center += self.cont.get_left()[1]
-
-            self.right_x_center += self.cont.get_right()[0]
-            self.right_y_center += self.cont.get_right()[1]
-            time.sleep(0.1)
-
-        self.left_x_center /= 20
-        self.left_y_center /= 20
-
-        self.right_x_center /= 20
-        self.right_y_center /= 20
-
-        print("Center set.")
-        print("Left X: {:.10f}".format(self.left_x_center))
-        print("Left Y: {:.10f}".format(self.left_y_center))
-        print("Right X: {:.10f}".format(self.right_x_center))
-        print("Right Y: {:.10f}".format(self.right_y_center))
-
-        self.left_x_range = [float("inf"), -float("inf")]
-        self.left_y_range = [float("inf"), -float("inf")]
-
-        self.right_x_range = [float("inf"), -float("inf")]
-        self.right_y_range = [float("inf"), -float("inf")]
-
-        print("Sweep both around in full circles for 10 seconds.")
-
-        start = time.time()
-
-        while time.time() - start < 10:
-            self.update()
-            left = self.cont.get_left()
-            right = self.cont.get_right()
-
-            left_x = left[0] - self.left_x_center
-            left_y = left[1] - self.left_y_center
-
-            right_x = right[0] - self.right_x_center
-            right_y = right[1] - self.right_y_center
-
-            if left_x > self.left_x_range[1]:
-                self.left_x_range[1] = left_x
-            if left_x < self.left_x_range[0]:
-                self.left_x_range[0] = left_x
-
-            if left_y > self.left_y_range[1]:
-                self.left_y_range[1] = left_y
-            if left_y < self.left_x_range[0]:
-                self.left_y_range[0] = left_y
-
-            if right_x > self.right_x_range[1]:
-                self.right_x_range[1] = right_x
-            if right_x < self.left_x_range[0]:
-                self.right_x_range[0] = right_x
-
-            if right_y > self.right_y_range[1]:
-                self.right_y_range[1] = right_y
-            if right_y < self.right_y_range[0]:
-                self.right_y_range[0] = right_y
-
-            time.sleep(0.02)
-
-        print("New ranges:")
-        print("Left x:", self.left_x_range)
-        print("Right x:", self.right_x_range)
-        print("Left x:", self.left_x_range)
-        print("Right x:", self.right_x_range)
-
-    def get(self):
-        """Get current state of the controller."""
-        left = self.cont.get_left()
-        right = self.cont.get_right()
-
-        left_x = left[0] - self.left_x_center
-        left_y = left[1] - self.left_y_center
-
-        right_x = right[0] - self.right_x_center
-        right_y = right[1] - self.right_y_center
-
-        left_x = map_ranges(left_x, self.left_x_range, (-1.0, 1.0))
-        left_y = map_ranges(left_y, self.left_y_range, (-1.0, 1.0))
-
-        right_x = map_ranges(right_x, self.right_x_range, (-1.0, 1.0))
-        right_y = map_ranges(right_y, self.right_y_range, (-1.0, 1.0))
-        
-        deadzone = .15
-
-        return {
-            # "left_x": squeeze(left_x, -1.0, 1.0, deadzone),
-            # "left_y": squeeze(left_y, -1.0, 1.0, deadzone),
-            # "right_x": squeeze(right_x, -1.0, 1.0, deadzone),
-            # "right_y": squeeze(right_y, -1.0, 1.0, deadzone),
-            "left_x": self.cont.joystick.get_axis(0),
-            "left_y": self.cont.joystick.get_axis(1),
-            "right_x": self.cont.joystick.get_axis(2),
-            "right_y": self.cont.joystick.get_axis(3),
-            "triggers": combine_triggers(self.cont.joystick.get_axis(4), self.cont.joystick.get_axis(5)),
-            "a": self.cont.joystick.get_button(0),
-            "b": self.cont.joystick.get_button(1),
-            "x": self.cont.joystick.get_button(2),
-            "y": self.cont.joystick.get_button(3),
-        }
+    Returns:
+        float: The value after applying the deadzone."""
+    if abs(value) < deadzone:
+        return 0
+    return value
 
 
 def combine_triggers(trigger_1: float, trigger_2: float) -> float:
