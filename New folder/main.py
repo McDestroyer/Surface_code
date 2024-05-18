@@ -5,7 +5,7 @@ import socket
 import time
 from pi_connection import PiConnection
 from controller import Controller
-from thruster_pwm import lateral_thruster_calc, thruster_mask_dict
+from thruster_pwm import FrameThrusters
 from serial_manager import SerialManager
 
 class Main:
@@ -15,6 +15,7 @@ class Main:
         self.joy = Controller()
         self.ser = SerialManager()
         self.pi = PiConnection()
+        self.thrusters = FrameThrusters()
 
         self.instantaneous_controls = {
             "a": 0,
@@ -52,6 +53,8 @@ class Main:
             "right": False,
         }
 
+        self.ctrl_invert_mask = 1
+
     def main(self):
         """Main"""
         while True:
@@ -61,10 +64,16 @@ class Main:
 
             # Handle controller input.
             self.handle_input(controls)
-            thrust = lateral_thruster_calc(controls["left_x"], controls["left_y"], controls["right_x"])
+            self.thrusters.thrust_calc(
+                controls["left_x"] * self.ctrl_invert_mask,
+                controls["left_y"] * self.ctrl_invert_mask,
+                controls["triggers"],
+                controls["right_y"] * self.ctrl_invert_mask,
+                controls["right_x"]
+            )
 
             # Assemble data to send to Pi.
-            data = thrust.get_pwm(controls["triggers"], -controls["right_y"])
+            data = self.thrusters.get_pwm()
             # For testing purposes only output manual thruster values.
             # data = {
             #     "fr": 1900,  # 5.0-5.1? Amps
@@ -97,9 +106,15 @@ class Main:
             pass
 
         if controls["b"]:
+            # Run auto code.
             pass
         if controls["x"]:
-            pass
+            if not self.instantaneous_controls["x"]:
+                self.ctrl_invert_mask *= -1
+                if self.ctrl_invert_mask == 1:
+                    print("Controls are normal.")
+                else:
+                    print("Controls are inverted.")
         if controls["y"]:
             pass
 
@@ -108,59 +123,85 @@ class Main:
 
         # If left bumper is pressed, decrease thruster mask values.
         if controls["left_bumper"] and not self.instantaneous_controls["left_bumper"]:
+            # Front motors: fr, fl, fv
             if controls["up"]:
                 if controls["right"]:
-                    thruster_mask_dict["fr"] = max(
-                        thruster_mask_dict["fr"] - mod_inc, -1)
+                    self.thrusters.fr.set_power(self.thrusters.fr.get_power() - mod_inc)
                 elif controls["left"]:
-                    thruster_mask_dict["fl"] = max(
-                        thruster_mask_dict["fl"] - mod_inc, -1)
+                    self.thrusters.fl.set_power(self.thrusters.fl.get_power() - mod_inc)
                 else:
-                    thruster_mask_dict["fv"] = max(
-                        thruster_mask_dict["fv"] - mod_inc, -1)
+                    self.thrusters.fv.set_power(self.thrusters.fv.get_power() - mod_inc)
+            # Rear motors: rr, rl, rv
             elif controls["down"]:
                 if controls["right"]:
-                    thruster_mask_dict["rr"] = max(
-                        thruster_mask_dict["rr"] - mod_inc, -1)
+                    self.thrusters.rr.set_power(self.thrusters.rr.get_power() - mod_inc)
                 elif controls["left"]:
-                    thruster_mask_dict["rl"] = max(
-                        thruster_mask_dict["rl"] - mod_inc, -1)
+                    self.thrusters.rl.set_power(self.thrusters.rl.get_power() - mod_inc)
                 else:
-                    thruster_mask_dict["rv"] = max(
-                        thruster_mask_dict["rv"] - mod_inc, -1)
+                    self.thrusters.rv.set_power(self.thrusters.rv.get_power() - mod_inc)
+            # Overall multiplier
             else:
-                thruster_mask_dict["power_multiplier"] = max(
-                    power_multiplier - mod_inc, 0)
+                self.thrusters.overall_multiplier = max(
+                    self.thrusters.overall_multiplier - mod_inc,
+                    0
+                )
 
         # If right bumper is pressed, increase thruster mask values.
         elif controls["right_bumper"] and not self.instantaneous_controls["right_bumper"]:
+            # Front motors: fr, fl, fv
             if controls["up"]:
                 if controls["right"]:
-                    thruster_mask_dict["fr"] = min(
-                        thruster_mask_dict["fr"] + mod_inc, 1)
+                    self.thrusters.fr.set_power(self.thrusters.fr.get_power() + mod_inc)
                 elif controls["left"]:
-                    thruster_mask_dict["fl"] = min(
-                        thruster_mask_dict["fl"] + mod_inc, 1)
+                    self.thrusters.fl.set_power(self.thrusters.fl.get_power() + mod_inc)
                 else:
-                    thruster_mask_dict["fv"] = min(
-                        thruster_mask_dict["fv"] + mod_inc, 1)
+                    self.thrusters.fv.set_power(self.thrusters.fv.get_power() + mod_inc)
+            # Rear motors: rr, rl, rv
             elif controls["down"]:
                 if controls["right"]:
-                    thruster_mask_dict["rr"] = min(
-                        thruster_mask_dict["rr"] + mod_inc, 1)
+                    self.thrusters.rr.set_power(self.thrusters.rr.get_power() + mod_inc)
                 elif controls["left"]:
-                    thruster_mask_dict["rl"] = min(
-                        thruster_mask_dict["rl"] + mod_inc, 1)
+                    self.thrusters.rl.set_power(self.thrusters.rl.get_power() + mod_inc)
                 else:
-                    thruster_mask_dict["rv"] = min(
-                        thruster_mask_dict["rv"] + mod_inc, 1)
+                    self.thrusters.rv.set_power(self.thrusters.rv.get_power() + mod_inc)
+            # Overall multiplier
             else:
-                thruster_mask_dict["power_multiplier"] = min(power_multiplier + mod_inc, 1)
+                self.thrusters.overall_multiplier = min(
+                    self.thrusters.overall_multiplier + mod_inc,
+                    1
+                )
+
+        # If back is pressed, reverse thruster polarity.
+        elif controls["back"] and not self.instantaneous_controls["back"]:
+            # Front motors: fr, fl, fv
+            if controls["up"]:
+                if controls["right"]:
+                    self.thrusters.fr.reverse_polarity()
+                elif controls["left"]:
+                    self.thrusters.fl.reverse_polarity()
+                else:
+                    self.thrusters.fv.reverse_polarity()
+            # Rear motors: rr, rl, rv
+            elif controls["down"]:
+                if controls["right"]:
+                    self.thrusters.rr.reverse_polarity()
+                elif controls["left"]:
+                    self.thrusters.rl.reverse_polarity()
+                else:
+                    self.thrusters.rv.reverse_polarity()
 
         # Print thruster mask to show changes.
         if ((controls["left_bumper"] and not self.instantaneous_controls["left_bumper"]) or
             (controls["right_bumper"] and not self.instantaneous_controls["right_bumper"])):
-            print(thruster_mask_dict)
+            print(
+                "FR:", self.thrusters.fr.get_multiplier(), "\n",
+                "FL:", self.thrusters.fl.get_multiplier(), "\n",
+                "RR:", self.thrusters.rr.get_multiplier(), "\n",
+                "RL:", self.thrusters.rl.get_multiplier(), "\n",
+                "FV:", self.thrusters.fv.get_multiplier(), "\n",
+                "RV:", self.thrusters.rv.get_multiplier(), "\n",
+                "Overall:", self.thrusters.overall_multiplier, "\n",
+            )
 
         # Update instantaneous controls (NOTE: Must be performed after all uses).
         for key in self.instantaneous_controls:

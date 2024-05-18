@@ -1,14 +1,5 @@
 """Module providing a basic wrapper for ROV thrusters and PWM calculations."""
-import math
-
-# thruster_mask = [
-#     -1,  # fr
-#     1,  # fl
-#     -1,  # rr
-#     -1,  # rl
-#     .75,  # fv
-#     .75,  # rv
-# ]
+import os
 
 thruster_mask_dict = {
     "fr": -1,  # fr
@@ -23,23 +14,77 @@ thruster_mask_dict = {
 class Thruster:
     """Basic wrapper for a servo-based thruster."""
 
-    def __init__(self, power: float = 0.0):
+    def __init__(self, reverse_polarity: bool = False, power_multiplier: float = 1.0,
+                 pulse_range: tuple[int, int] | None = None) -> None:
         """Initialize a new thruster
 
         Args:
-            power (int, optional): Motor power. Defaults to 0.0.
+            reverse_polarity (bool, optional):
+                Whether the thruster is in reverse polarity.
+                Defaults to False.
+            power_multiplier (float, optional):
+                Multiplier for the thruster power. Must be between 0.0 and 1.0.
+                Defaults to 1.0.
+            pulse_range (tuple[int, int], optional):
+                The range of PWM values the thruster can accept.
+                Defaults to (1100, 1900).
         """
-        self.power = power
-        self.reverse_polarity = False
+        self.power = 0
+        self.polarity_mask = -1 if reverse_polarity else 1
+        self.multiplier = min(max(power_multiplier, 0), 1)
+        self.pulse_range = pulse_range if pulse_range else (1100, 1900)
 
-    def toggle_polarity(self):
-        """Toggle the polarity of the thruster."""
-        self.reverse_polarity = not self.reverse_polarity
+    def get_pwm(self) -> int:
+        """Get a PWM value for the thruster at its current power.
+        
+        Returns:
+            int: The PWM value for the thruster."""
+        power = self.power * self.polarity_mask * self.multiplier
+        return int(self.pulse_range[0] + 0.5 * (self.pulse_range[1] - self.pulse_range[0]) * (power))  # NOTE: There was a +1 to the power here? If broken, add back
 
-    def get_pwm(self, min_pulse: int = 1100, max_pulse: int = 1900) -> int:
-        """Get a PWM value for the thruster at its current power."""
-        power = -self.power if self.reverse_polarity else self.power
-        return int(min_pulse + 0.5 * (max_pulse - min_pulse) * (power + 1))
+    def reverse_polarity(self) -> bool:
+        """Toggle the polarity of the thruster.
+        
+        Returns:
+            bool: Whether the polarity is now reversed.
+        """
+        self.polarity_mask *= -1
+        return True if self.polarity_mask == -1 else False
+
+    def set_power(self, power: float) -> None:
+        """Set the power of the thruster.
+        
+        Args:
+            power (float):
+                The power of the thruster. Must be between -1.0 and 1.0.
+        """
+        self.power = min(max(power, 0), 1)
+
+    def get_power(self) -> float:
+        """Get the power of the thruster.
+        
+        Returns:
+            float: The power of the thruster.
+        """
+        return self.power
+
+    def set_multiplier(self, power_multiplier: float) -> None:
+        """Set the power multiplier of the thruster.
+        
+        Args:
+            power_multiplier (float):
+                The power multiplier of the thruster. Must be between 0.0 and 1.0.
+        """
+        self.multiplier = min(max(power_multiplier, 0), 1)
+
+    def get_multiplier(self) -> float:
+        """Get the power multiplier of the thruster.
+        
+        Returns:
+            float: The power multiplier of the thruster multiplied by the polarity mask
+                (This means it would be negative if the motor is reversed).
+        """
+        return self.multiplier * self.polarity_mask
 
     def __repr__(self) -> str:
         return f"Thruster(power={self.power})"
@@ -47,41 +92,227 @@ class Thruster:
 class FrameThrusters:
     """Wrapper for a ROV frame's thrusters."""
 
-    def __init__(self, fr: Thruster, fl: Thruster, rr: Thruster, rl: Thruster):
+    def __init__(self, folder_name: str = "default_thruster_profile") -> None:
         """Initialize a new set of thruster values.
-
+        
         Args:
-            fr (Thruster): Upper right thruster.
-            fl (Thruster): Upper left thruster.
-            rr (Thruster): Lower right thruster.
-            rl (Thruster): Lower left thruster.
+            file_name (str, optional):
+                The path to the folder containing the thruster settings starting
+                inside the configs folder.
+                Defaults to "default_thruster_profile".
         """
-        self.fr = fr
-        self.fl = fl
-        self.rr = rr
-        self.rl = rl
+        # Generate the path to the file.
+        current_path = os.path.dirname(__file__)
+        self.folder_path = os.path.join(current_path, "configs", folder_name)
 
-    def get_pwm(self, z, pitch, min_pulse: int = 1100, max_pulse: int = 1900) -> dict[str, int]:
+        # Load settings from a file if a file name is provided.
+        settings = get_settings(self.folder_path)
+
+        # Initialize thrusters.
+        self.fr = Thruster(settings["fr"][0], settings["fr"][1])
+        self.fl = Thruster(settings["fl"][0], settings["fl"][1])
+        self.rr = Thruster(settings["rr"][0], settings["rr"][1])
+        self.rl = Thruster(settings["rl"][0], settings["rl"][1])
+        self.fv = Thruster(settings["fv"][0], settings["fv"][1])
+        self.rv = Thruster(settings["rv"][0], settings["rv"][1])
+
+        self.overall_multiplier = settings["multiplier"]
+
+    def get_pwm(self) -> dict[str, int]:
         """Get a PWM value for each thruster at its current power."""
         return {
-            "fr": self.fr.get_pwm(min_pulse, max_pulse),
-            "fl": self.fl.get_pwm(min_pulse, max_pulse),
-            "rr": self.rr.get_pwm(min_pulse, max_pulse),
-            "rl": self.rl.get_pwm(min_pulse, max_pulse),
-            "fv": vertical_pwm_calc(z, pitch)[0],
-            "rv": vertical_pwm_calc(z, pitch)[1],
+            "fr": self.fr.get_pwm(),
+            "fl": self.fl.get_pwm(),
+            "rr": self.rr.get_pwm(),
+            "rl": self.rl.get_pwm(),
+            "fv": self.fv.get_pwm(),
+            "rv": self.rv.get_pwm(),
         }
 
-def lateral_thruster_calc(x: float, y: float, r: float) -> FrameThrusters:
+    def thrust_calc(self, x: float, y: float, z: float, pitch: float, yaw: float) -> None:
+        """Calculate thruster values for a given set of inputs.
+
+        Args:
+            x (float):
+                Sideways movement speed (between -1.0 and 1.0).
+            y (float):
+                Forward movement speed (between -1.0 and 1.0).
+            z (float):
+                Vertical movement speed (between -1.0 and 1.0).
+            pitch (float):
+                Pitch speed (between -1.0 and 1.0).
+            yaw (float):
+                Yaw speed (between -1.0 and 1.0).
+        """
+        lateral_thrusters = lateral_thruster_calc(x, y, yaw)
+        vertical_thrusters = vertical_pwm_calc(z, pitch)
+
+        self.fr.set_power(lateral_thrusters["fr"] * self.overall_multiplier)
+        self.fl.set_power(lateral_thrusters["fl"] * self.overall_multiplier)
+        self.rr.set_power(lateral_thrusters["rr"] * self.overall_multiplier)
+        self.rl.set_power(lateral_thrusters["rl"] * self.overall_multiplier)
+        self.fv.set_power(vertical_thrusters["fv"] * self.overall_multiplier)
+        self.rv.set_power(vertical_thrusters["rv"] * self.overall_multiplier)
+
+
+    def save_settings(self, folder_name: str = "") -> None:
+        """Save the current thruster and frame settings to either the
+        specified folder or the currently saved one. Creates one if necessary.
+        
+        Args:
+            folder_name (str, optional):
+                The name of the folder to save the settings to.
+                Defaults to the currently saved folder.
+        """
+        if not folder_name:
+            pass
+        else:
+            # Generate the path to the folder.
+            current_path = os.path.dirname(__file__)
+            self.folder_path = os.path.join(current_path, "configs", folder_name)
+
+        # Verify that the folder exists/is valid.
+        if not os.path.exists(os.path.dirname(self.folder_path)):
+            os.makedirs(os.path.dirname(self.folder_path))
+
+        # Generate the paths to the first settings files.
+        path = os.path.join(self.folder_path, "thruster_profile.fngr")
+
+        # Save the settings to the file.
+        for _ in range(2):
+            with open(path, "w", encoding="UTF-8") as file:
+                file.write(f"fr:{self.fr.polarity_mask}:{self.fr.multiplier}\n")
+                file.write(f"fl:{self.fl.polarity_mask}:{self.fl.multiplier}\n")
+                file.write(f"rr:{self.rr.polarity_mask}:{self.rr.multiplier}\n")
+                file.write(f"rl:{self.rl.polarity_mask}:{self.rl.multiplier}\n")
+                file.write(f"fv:{self.fv.polarity_mask}:{self.fv.multiplier}\n")
+                file.write(f"rv:{self.rv.polarity_mask}:{self.rv.multiplier}\n")
+
+            # Generate the paths to the second settings file for the second loop.
+            path = os.path.join(self.folder_path, "frame_profile.fngr")
+
+        print("Settings saved to:", self.folder_path)
+
+
+def get_settings(path: str) -> dict[str, list[bool, float] | float]:
+    """Get settings from a file.
+
+    Args:
+        path (str):
+            The path to the folder.
+
+    Returns:
+        dict[str, list[bool, float]]: A dictionary of settings.
+    """
+    # Verify that the file exists/is valid.
+    if not os.path.exists(os.path.dirname(path)):
+        os.makedirs(os.path.dirname(path))
+
+    # Generate the paths to the specific settings files.
+    thruster_path = os.path.join(path, "thruster_profile.fngr")
+    frame_path = os.path.join(path, "frame_profile.fngr")
+
+    default_thruster_settings = {
+        "fr": [False, 1.0],
+        "fl": [False, 1.0],
+        "rr": [False, 1.0],
+        "rl": [False, 1.0],
+        "fv": [False, 1.0],
+        "rv": [False, 1.0],
+    }
+
+    default_frame_settings = {
+        "multiplier": 1.0,
+    }
+
+    # Get thruster settings:
+
+    # Read the file and return the settings, or create a new file if it doesn't exist.
+    try:
+        with open(thruster_path, "r", encoding="UTF-8") as file:
+            file_lines = file.readlines()[:]
+        if len(file_lines) < 6:
+            print("File is of insufficient length. Replacing file contents...")
+            raise FileNotFoundError
+    except FileNotFoundError:
+        print("File not found or empty. Creating new file...")
+        with open(thruster_path, "w", encoding="UTF-8") as file:
+            for key, value in default_thruster_settings.items():
+                file.write(f"{key}:{value[0]}:{value[1]}\n")
+
+    with open(thruster_path, "r", encoding="UTF-8") as file:
+        file_lines = file.readlines()[:]
+
+    # Parse the settings into a dictionary and return.
+    settings_dict = {}
+    for line in file_lines:
+        line = line.split(":")
+        settings_dict[line[0]] = [is_bool(line[1]), float(line[2])]
+
+    # Get frame settings:
+
+    # Read the file and return the settings, or create a new file if it doesn't exist.
+    try:
+        with open(frame_path, "r", encoding="UTF-8") as file:
+            file_lines = file.readlines()[:]
+        if len(file_lines) < 1:
+            print("File is of insufficient length. Replacing file contents...")
+            raise FileNotFoundError
+    except FileNotFoundError:
+        print("File not found. Creating new file...")
+        with open(frame_path, "w", encoding="UTF-8") as file:
+            for key, value in default_frame_settings.items():
+                file.write(f"{key}:{value}\n")
+
+    with open(frame_path, "r", encoding="UTF-8") as file:
+        file_lines = file.readlines()[:]
+
+    # Parse the settings into the dictionary and return.
+    for line in file_lines:
+        line = line.split(":")
+        settings_dict[line[0]] = float(line[1])
+
+    return settings_dict
+
+
+def is_bool(string: str) -> bool | None:
+    """Check if a string is a boolean.
+    Mostly just for fun bc it'll always be the words true or false.
+
+    Args:
+        string (str):
+            The string to check.
+
+    Returns:
+        bool: Whether the string is a boolean.
+    """
+    positive_answers = (['ok', 'okay', 'yes', 'y', 'sure', '1', 'true', 'affirmative',
+                         'alright', 't', 'yeah', 'yup', 'ye', 'yea'])
+    negative_answers = (['no', 'nope', 'negative', 'nein', '0',
+                         'n', 'false', 'nah', 'nay', 'negatory'])
+
+    if string.lower() in positive_answers:
+        return True
+    elif string.lower() in negative_answers:
+        return False
+    else:
+        return None
+
+
+def lateral_thruster_calc(x: float, y: float, r: float) -> tuple[str, float]:
     """Calculate lateral thruster values for a given set of inputs.
 
     Args:
-        x (float): Sideways movement speed (between -1.0 and 1.0).
-        y (float): Forward movement speed (between -1.0 and 1.0).
-        r (float): Rotation speed (between -1.0 and 1.0).
+        x (float):
+            Sideways movement speed (between -1.0 and 1.0).
+        y (float):
+            Forward movement speed (between -1.0 and 1.0).
+        r (float):
+            Rotation speed (between -1.0 and 1.0).
 
     Returns:
-       FrameThrusters: A collection of Thrusters at the correct power levels."""
+        dict[str, float]: A dictionary of thruster values for each lateral thruster.
+    """
 
     # Assume that positive values are all going forward.
     # We can reason what what should happen if we only have a single non-zero input:
@@ -117,45 +348,10 @@ def lateral_thruster_calc(x: float, y: float, r: float) -> FrameThrusters:
     rr /= normalization_factor
     rl /= normalization_factor
 
-    # * 1 if y <= 0 else .8
-    fr *= thruster_mask_dict["fr"] * thruster_mask_dict["power_multiplier"]
-    fl *= thruster_mask_dict["fl"] * thruster_mask_dict["power_multiplier"]
-    rr *= thruster_mask_dict["rr"] * thruster_mask_dict["power_multiplier"]
-    rl *= thruster_mask_dict["rl"] * thruster_mask_dict["power_multiplier"]
+    return {"fr": fr, "fl": fl, "rr": rr, "rl": rl}
 
-    return FrameThrusters(Thruster(fr), Thruster(fl), Thruster(rr), Thruster(rl))
 
-def map_to_circle(x: float, y: float) -> tuple[float, float]:
-    """Map rectangular controller inputs to a circle."""
-    return (x*math.sqrt(1 - y**2/2.0), y*math.sqrt(1 - x**2/2.0))
-
-INV_SQRT2 = 0.7071067811865476
-def lateral_thruster_calc_circular(x: float, y: float, r: float):
-    """Calculate lateral thruster values for a given set of inputs after mapping them to a circle.
-
-    Args:
-        x (float): Sideways movement speed (between -1.0 and 1.0).
-        y (float): Forward movement speed (between -1.0 and 1.0).
-        r (float): Rotation speed (between -1.0 and 1.0).
-
-    Returns:
-       FrameThrusters: A collection of Thrusters at the correct power levels."""
-    # some bullshit
-    x, y = map_to_circle(x, y)
-    r *= INV_SQRT2
-    thrusters = lateral_thruster_calc(x, y, r)
-    mag_adjust = abs(math.sqrt(x**2 + y**2) / max((thrusters.fr.power,
-                                               thrusters.fl.power,
-                                               thrusters.rr.power,
-                                               thrusters.rl.power)))
-
-    thrusters.fr.power *= mag_adjust
-    thrusters.fl.power *= mag_adjust
-    thrusters.rr.power *= mag_adjust
-    thrusters.rl.power *= mag_adjust
-    return thrusters
-
-def vertical_pwm_calc(z: float, pitch: float) -> tuple[int, int]:
+def vertical_pwm_calc(z: float, pitch: float) -> dict[str, float]:
     """Calculate vertical thruster values for a given set of inputs.
 
     Args:
@@ -165,23 +361,16 @@ def vertical_pwm_calc(z: float, pitch: float) -> tuple[int, int]:
             Pitch speed (between -1.0 and 1.0).
 
     Returns:
-        tuple[int, int]: A tuple of PWM values for the vertical thrusters.
+        dict[str, int]: A dictionary of PWM values for the vertical thrusters.
     """
-    fv = z + pitch
-    rv = z - pitch
+    fv = z - pitch
+    rv = z + pitch
 
-    # However, we want thruster values to be in the range [-1.0, 1.0], so we need to normalize based on the maximum
-    # possible value this can have: 1
+    # However, we want thruster values to be in the range [-1.0, 1.0],
+    # so we need to normalize based on the maximum possible value this can have: 1
     normalization_divisor = max(abs(fv), abs(rv), 1)
 
     fv /= normalization_divisor
     rv /= normalization_divisor
 
-    fv *= thruster_mask_dict["fv"]
-    rv *= thruster_mask_dict["rv"]
-
-    # Finally, we need to convert these values to PWM values.
-    fv = int(1500 + 400 * fv)
-    rv = int(1500 + 400 * rv)
-
-    return fv, rv
+    return {"fv": fv, "rv": rv}
