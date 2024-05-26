@@ -15,7 +15,7 @@ class PiConnection:
 
         while True:
             try:
-                if self.port_mod >= 10:
+                if self.port_mod >= 5:
                     self.port_mod = 0
                 print("Trying port:", self.TCP_PORT + self.port_mod)
                 self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
